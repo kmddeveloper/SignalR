@@ -157,15 +157,16 @@ namespace Microsoft.AspNet.SignalR.Transports
 
         public virtual Task Send(object value)
         {
-            return EnqueueOperation(() =>
+            return EnqueueOperation(state =>
             {
                 Context.Response.ContentType = JsonUtility.JsonMimeType;
 
-                JsonSerializer.Serialize(value, OutputWriter);
+                JsonSerializer.Serialize(state, OutputWriter);
                 OutputWriter.Flush();
 
                 return Context.Response.End().Catch(IncrementErrorCounters);
-            });
+            }, 
+            value);
         }
 
         protected internal virtual Task InitializeResponse(ITransportConnection connection)
@@ -173,9 +174,9 @@ namespace Microsoft.AspNet.SignalR.Transports
             return TaskAsyncHelper.Empty;
         }
 
-        protected internal override Task EnqueueOperation(Func<Task> writeAsync)
+        protected internal override Task EnqueueOperation(Func<object, Task> writeAsync, object state)
         {
-            Task task = base.EnqueueOperation(writeAsync);
+            Task task = base.EnqueueOperation(writeAsync, state);
 
             // If PersistentConnection.OnConnected has not completed (as indicated by InitializeTcs),
             // the queue will be blocked to prevent clients from prematurely indicating the connection has
