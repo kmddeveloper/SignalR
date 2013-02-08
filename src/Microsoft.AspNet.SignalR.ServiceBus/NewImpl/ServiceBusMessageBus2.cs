@@ -10,6 +10,8 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 {
     public class ServiceBusMessageBus2 : ScaleoutMessageBus
     {
+        private const string SignalRTopicPrefix = "SIGNALR_TOPIC";
+
         private IDisposable _subscription;
         private ServiceBusConnection _connection;
         private readonly string[] _topics;
@@ -20,7 +22,7 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             _connection = new ServiceBusConnection(connectionString);
 
             _topics = Enumerable.Range(0, numberOfTopics)
-                                .Select(topicIndex => topicPrefix + "_" + topicIndex)
+                                .Select(topicIndex => SignalRTopicPrefix + "_" + topicPrefix + "_" + topicIndex)
                                 .ToArray();
 
             _subscription = _connection.Subscribe(_topics, OnMessage);
