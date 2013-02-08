@@ -13,6 +13,8 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
     public class ServiceBusConnection : IDisposable
     {
         private const int ReceiveBatchSize = 1000;
+        private static readonly TimeSpan BackoffAmount = TimeSpan.FromSeconds(20);
+        private static readonly TimeSpan MessageTtl = TimeSpan.FromMinutes(1);
 
         private readonly NamespaceManager _namespaceManager;
         private readonly MessagingFactory _factory;
@@ -73,10 +75,11 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 
         public Task Publish(string topicName, Stream stream)
         {
+            // REVIEW: Do we need to keep track of these and clean this up on Dispose?
             var client = TopicClient.CreateFromConnectionString(_connectionString, topicName);
             var message = new BrokeredMessage(stream, ownsStream: true)
             {
-                TimeToLive = TimeSpan.FromMinutes(1)
+                TimeToLive = MessageTtl
             };
 
             return client.SendAsync(message);
@@ -130,7 +133,7 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 
                     if (backOff)
                     {
-                        TaskAsyncHelper.Delay(TimeSpan.FromSeconds(20))
+                        TaskAsyncHelper.Delay(BackoffAmount)
                                        .Then(() => PumpMessages(topicPath, receiver, handler));
                     }
                     else
