@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.AspNet.SignalR.Infrastructure;
 using Microsoft.AspNet.SignalR.ServiceBus.Infrastructure;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
@@ -23,9 +25,20 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             _factory = MessagingFactory.CreateFromConnectionString(connectionString);
         }
 
+        [SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "The disposable is returned to the caller")]
         public IDisposable Subscribe(IList<string> topicNames, Action<string, IEnumerable<BrokeredMessage>> handler)
         {
-            var subscription = new Subscription(_namespaceManager);
+            if (topicNames == null)
+            {
+                throw new ArgumentNullException("topicNames");
+            }
+
+            if (handler == null)
+            {
+                throw new ArgumentNullException("handler");
+            }
+
+            var subscriptions = new List<Subscription>();
 
             foreach (var topicPath in topicNames)
             {
@@ -35,20 +48,27 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
                 }
 
                 // Create a random subscription
-                string subName = Guid.NewGuid().ToString();
-                SubscriptionDescription topicSubscription = _namespaceManager.CreateSubscription(topicPath, subName);
-                string subscriptionEntityPath = SubscriptionClient.FormatSubscriptionPath(topicPath, subName);
+                string subscriptionName = Guid.NewGuid().ToString();
+                _namespaceManager.CreateSubscription(topicPath, subscriptionName);
 
+                // Create a receiver to get messages
+                string subscriptionEntityPath = SubscriptionClient.FormatSubscriptionPath(topicPath, subscriptionName);
                 MessageReceiver receiver = _factory.CreateMessageReceiver(subscriptionEntityPath);
 
-                subscription.TopicPath = topicPath;
-                subscription.Name = subName;
-                subscription.Receivers.Add(receiver);
+                subscriptions.Add(new Subscription(topicPath, subscriptionName, receiver));
 
-                ReceiveMessages(topicPath, receiver, handler);
+                PumpMessages(topicPath, receiver, handler);
             }
 
-            return subscription;
+            return new DisposableAction(() =>
+            {
+                foreach (var subscription in subscriptions)
+                {
+                    subscription.Receiver.Close();
+
+                    _namespaceManager.DeleteSubscription(subscription.TopicPath, subscription.Name);
+                }
+            });
         }
 
         public Task Publish(string topicName, Stream stream)
@@ -62,12 +82,21 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             return client.SendAsync(message);
         }
 
-        public void Dispose()
+        protected virtual void Dispose(bool disposing)
         {
-            // REVIEW: What do we dipose here
+            if (disposing)
+            {
+                // Close the factory
+                _factory.Close();
+            }
         }
 
-        private void ReceiveMessages(string topicPath, MessageReceiver receiver, Action<string, IEnumerable<BrokeredMessage>> handler)
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+
+        private void PumpMessages(string topicPath, MessageReceiver receiver, Action<string, IEnumerable<BrokeredMessage>> handler)
         {
         receive:
 
@@ -102,11 +131,11 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
                     if (backOff)
                     {
                         TaskAsyncHelper.Delay(TimeSpan.FromSeconds(20))
-                                       .Then(() => ReceiveMessages(topicPath, receiver, handler));
+                                       .Then(() => PumpMessages(topicPath, receiver, handler));
                     }
                     else
                     {
-                        ReceiveMessages(topicPath, receiver, handler);
+                        PumpMessages(topicPath, receiver, handler);
                     }
                 },
                 null);
@@ -124,29 +153,18 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             }
         }
 
-        private class Subscription : IDisposable
+        private class Subscription
         {
-            private readonly NamespaceManager _namespaceManager;
-
-            public Subscription(NamespaceManager namespaceManager)
+            public Subscription(string topicPath, string subName, MessageReceiver receiver)
             {
-                _namespaceManager = namespaceManager;
-                Receivers = new List<MessageReceiver>();
+                TopicPath = topicPath;
+                Name = subName;
+                Receiver = receiver;
             }
 
-            public string TopicPath { get; set; }
-            public string Name { get; set; }
-            public List<MessageReceiver> Receivers { get; private set; }
-
-            public void Dispose()
-            {
-                foreach (var receiver in Receivers)
-                {
-                    receiver.Close();
-                }
-
-                _namespaceManager.DeleteSubscription(TopicPath, Name);
-            }
+            public string TopicPath { get; private set; }
+            public string Name { get; private set; }
+            public MessageReceiver Receiver { get; private set; }
         }
     }
 }

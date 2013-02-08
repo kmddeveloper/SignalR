@@ -1,23 +1,24 @@
 ﻿// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.md in the project root for license information.
 
-namespace Microsoft.AspNet.SignalR.ServiceBus
-{
-    using System;
-    using System.Collections.Generic;
-    using System.Globalization;
-    using System.IO;
-    using System.Runtime.Serialization;
-    using System.Text;
-    using Microsoft.AspNet.SignalR.Messaging;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO;
+using System.Runtime.Serialization;
+using System.Text;
+using Microsoft.AspNet.SignalR.Messaging;
 
-    // This class provides binary stream represendation of Message instances
+namespace Microsoft.AspNet.SignalR.ServiceBus
+{    
+    // This class provides binary stream representation of Message instances
     // and allows to get Message instances back from such stream.
-    sealed class FastMessageSerializer
+    internal sealed class FastMessageSerializer
     {
-        const int DataSizeNull = -1;
-        const int MessageMarker = 0;
-        const int EndOfStreamMarker = -1;
-        const int MaxDataSizeInBytes = 256 * 1024;
+        private const int DataSizeNull = -1;
+        private const int MessageMarker = 0;
+        private const int EndOfStreamMarker = -1;
+        private const int MaxDataSizeInBytes = 256 * 1024;
 
         public static Stream GetStream(IEnumerable<Message> messages)
         {
@@ -26,46 +27,44 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 
         public static Message[] GetMessages(Stream stream)
         {
-            return new MessagesStreamReader(stream).ReadToEnd();
+            return new MessagesStreamReader(stream).ReadMessages();
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable", Justification = "Do not want to alter functionality.")]
-        sealed class MessagesStreamReader
+        [SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable", Justification = "Do not want to alter functionality.")]
+        private sealed class MessagesStreamReader
         {
-            readonly BufferedStream stream;
-            readonly BinaryReader reader;
-            List<Message> messages;
+            private readonly BinaryReader _reader;
+            private List<Message> _messages;
 
             public MessagesStreamReader(Stream stream)
             {
-                this.stream = new BufferedStream(stream);
-                this.reader = new BinaryReader(this.stream);
+                _reader = new BinaryReader(stream);
             }
 
-            public Message[] ReadToEnd()
+            public Message[] ReadMessages()
             {
-                if (this.messages != null)
+                if (_messages != null)
                 {
-                    return this.messages.ToArray();
+                    return _messages.ToArray();
                 }
 
-                this.messages = new List<Message>();
+                _messages = new List<Message>();
 
                 while (true)
                 {
-                    int marker = this.reader.ReadInt32();
+                    int marker = _reader.ReadInt32();
 
                     if (marker == MessageMarker)
                     {
-                        string source = this.GetDataItem();
-                        string key = this.GetDataItem();
-                        string value = this.GetDataItem();
-                        string commandId = this.GetDataItem();
-                        string waitForAcValue = this.GetDataItem();
-                        string isAckValue = this.GetDataItem();
-                        string filter = this.GetDataItem();
+                        string source = GetDataItem();
+                        string key = GetDataItem();
+                        string value = GetDataItem();
+                        string commandId = GetDataItem();
+                        string waitForAcValue = GetDataItem();
+                        string isAckValue = GetDataItem();
+                        string filter = GetDataItem();
 
-                        messages.Add(
+                        _messages.Add(
                             new Message(source, key, value)
                             {
                                 CommandId = commandId,
@@ -84,14 +83,14 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
                     }
                 }
 
-                return messages.ToArray();
+                return _messages.ToArray();
             }
 
-            string GetDataItem()
+            private string GetDataItem()
             {
                 string data;
 
-                int dataSize = this.reader.ReadInt32();
+                int dataSize = _reader.ReadInt32();
 
                 if (dataSize < -1)
                 {
@@ -113,7 +112,7 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
                 }
                 else
                 {
-                    byte[] buffer = this.reader.ReadBytes(dataSize);
+                    byte[] buffer = _reader.ReadBytes(dataSize);
                     data = Encoding.UTF8.GetString(buffer);
                 }
 
@@ -121,16 +120,16 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             }
         }
 
-        sealed class MessagesStream : Stream
+        private sealed class MessagesStream : Stream
         {
-            readonly IEnumerator<byte[]> iterator;
+            private readonly IEnumerator<byte[]> _iterator;
 
-            byte[] sourceBuffer;
-            int sourceBufferPosition;
+            private byte[] _sourceBuffer;
+            private int _sourceBufferPosition;
 
             public MessagesStream(IEnumerable<Message> messages)
             {
-                this.iterator = CreateIterator(messages);
+                _iterator = CreateIterator(messages);
             }
 
             public override void Flush()
@@ -155,24 +154,24 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 
                 while (totalCopied < count)
                 {
-                    if (this.sourceBuffer == null || this.sourceBuffer.Length == this.sourceBufferPosition)
+                    if (_sourceBuffer == null || _sourceBuffer.Length == _sourceBufferPosition)
                     {
-                        if (!this.iterator.MoveNext())
+                        if (!_iterator.MoveNext())
                         {
                             return totalCopied;
                         }
 
-                        this.sourceBuffer = this.iterator.Current;
-                        this.sourceBufferPosition = 0;
+                        _sourceBuffer = _iterator.Current;
+                        _sourceBufferPosition = 0;
                     }
 
-                    int bytesLeftInSourceBuffer = sourceBuffer.Length - sourceBufferPosition;
+                    int bytesLeftInSourceBuffer = _sourceBuffer.Length - _sourceBufferPosition;
                     int bytesLeftInDestinationBuffer = count - destinationIndex;
 
                     int countToCopy = Math.Min(bytesLeftInDestinationBuffer, bytesLeftInSourceBuffer);
-                    Array.Copy(sourceBuffer, sourceBufferPosition, destinationBuffer, destinationIndex, countToCopy);
+                    Array.Copy(_sourceBuffer, _sourceBufferPosition, destinationBuffer, destinationIndex, countToCopy);
 
-                    this.sourceBufferPosition += countToCopy;
+                    _sourceBufferPosition += countToCopy;
                     destinationIndex += countToCopy;
                     totalCopied += countToCopy;
                 }
@@ -213,17 +212,24 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 
             protected override void Dispose(bool disposing)
             {
-                this.iterator.Dispose();
+                _iterator.Dispose();
                 base.Dispose(disposing);
             }
 
-            static IEnumerator<byte[]> CreateIterator(IEnumerable<Message> messages)
+            private static IEnumerator<byte[]> CreateIterator(IEnumerable<Message> messages)
             {
                 foreach (Message message in messages)
                 {
                     yield return BitConverter.GetBytes(MessageMarker);
 
-                    string[] itemList = new string[] { message.Source, message.Key, message.Value, message.CommandId, message.WaitForAck.ToString(), message.IsAck.ToString(), message.Filter };
+                    string[] itemList = new string[] { message.Source, 
+                                                       message.Key, 
+                                                       message.Value, 
+                                                       message.CommandId, 
+                                                       message.WaitForAck.ToString(), 
+                                                       message.IsAck.ToString(), 
+                                                       message.Filter 
+                                                     };
 
                     foreach (string item in itemList)
                     {

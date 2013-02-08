@@ -67,12 +67,14 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
 
         private void OnMessage(string topicName, IEnumerable<BrokeredMessage> messages)
         {
-            foreach (var m in messages)
+            foreach (var message in messages)
             {
-                var internalMessages = FastMessageSerializer.GetMessages(m.GetBody<Stream>())
-                                                            .ToArray();
+                using (message)
+                {
+                    var internalMessages = FastMessageSerializer.GetMessages(message.GetBody<Stream>());
 
-                OnReceived(topicName, (ulong)m.SequenceNumber, internalMessages);
+                    OnReceived(topicName, (ulong)message.SequenceNumber, internalMessages);
+                }
             }
         }
 

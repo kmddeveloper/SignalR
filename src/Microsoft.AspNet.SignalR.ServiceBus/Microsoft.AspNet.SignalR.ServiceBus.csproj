@@ -78,9 +78,9 @@
     <Compile Include="AsyncSemaphore.cs" />
     <Compile Include="DbConnectionStringBuilderExtentionMethods.cs" />
     <Compile Include="DependencyResolverExtensions.cs" />
-    <Compile Include="FastMessageSerializer.cs" />
+    <Compile Include="NewImpl\FastMessageSerializer.cs" />
     <Compile Include="CallbackException.cs" />
-    <Compile Include="HashCode.cs" />
+    <Compile Include="NewImpl\HashCode.cs" />
     <Compile Include="CompletedAsyncResult.cs" />
     <Compile Include="Infrastructure\ServiceBusTaskExtensions.cs" />
     <Compile Include="InputQueue.cs" />
@@ -102,7 +102,7 @@
     <Compile Include="TaskAsyncResult.cs" />
     <Compile Include="TopicMessageBus.cs" />
     <Compile Include="MessagePump.cs" />
-    <Compile Include="Md5Hash.cs" />
+    <Compile Include="NewImpl\Md5Hash.cs" />
     <Compile Include="Ticks.cs" />
     <Compile Include="TimeoutHelper.cs" />
     <Compile Include="NewImpl\ServiceBusMessageBus2.cs" />
