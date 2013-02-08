@@ -64,6 +64,14 @@ namespace Microsoft.AspNet.SignalR
             return resolver;
         }
 
+        public static IDependencyResolver UseServiceBus2(this IDependencyResolver resolver, string connectionString, string topicPrefix, int topicCount)
+        {
+            var bus = new Lazy<ServiceBusMessageBus2>(() => new ServiceBusMessageBus2(connectionString, topicPrefix, topicCount, resolver));
+            resolver.Register(typeof(IMessageBus), () => bus.Value);
+
+            return resolver;
+        }
+
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Globalization", "CA1307:SpecifyStringComparison", MessageId = "System.String.LastIndexOf(System.String)", Justification = "Comparing non alpha numeric characters."), MethodImpl(MethodImplOptions.NoInlining)]
         private static AzureRoleInfo GetRoleInfo()
         {
