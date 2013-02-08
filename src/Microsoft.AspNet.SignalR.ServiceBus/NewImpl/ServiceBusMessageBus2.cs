@@ -28,7 +28,6 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             _subscription = _connection.Subscribe(_topics, OnMessage);
         }
 
-
         protected override Task Send(IList<Message> messages)
         {
             var taskCompletionSource = new TaskCompletionSource<object>();
