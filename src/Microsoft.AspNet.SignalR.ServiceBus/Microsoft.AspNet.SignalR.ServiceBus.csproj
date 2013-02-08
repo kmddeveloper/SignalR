@@ -72,7 +72,7 @@
       <Link>Infrastructure\DisposableAction.cs</Link>
     </Compile>
     <Compile Include="..\Microsoft.AspNet.SignalR.Core\TaskAsyncHelper.cs">
-      <Link>TaskAsyncHelper.cs</Link>
+      <Link>Infrastructure\TaskAsyncHelper.cs</Link>
     </Compile>
     <Compile Include="AsyncResult.cs" />
     <Compile Include="AsyncSemaphore.cs" />
@@ -105,7 +105,7 @@
     <Compile Include="Md5Hash.cs" />
     <Compile Include="Ticks.cs" />
     <Compile Include="TimeoutHelper.cs" />
-    <Compile Include="TopicMessageBus2.cs" />
+    <Compile Include="NewImpl\ServiceBusMessageBus2.cs" />
     <Compile Include="TraceEventTypeExtentionMethods.cs" />
     <Compile Include="UnsafeNativeMethods.cs" />
   </ItemGroup>

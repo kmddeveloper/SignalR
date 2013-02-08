@@ -8,13 +8,13 @@ using Microsoft.ServiceBus.Messaging;
 
 namespace Microsoft.AspNet.SignalR.ServiceBus
 {
-    public class TopicMessageBus2 : ScaleoutMessageBus
+    public class ServiceBusMessageBus2 : ScaleoutMessageBus
     {
         private IDisposable _subscription;
         private ServiceBusConnection _connection;
         private readonly string[] _topics;
 
-        public TopicMessageBus2(string connectionString, string topicPrefix, int numberOfTopics, IDependencyResolver resolver)
+        public ServiceBusMessageBus2(string connectionString, string topicPrefix, int numberOfTopics, IDependencyResolver resolver)
             : base(resolver)
         {
             _connection = new ServiceBusConnection(connectionString);
