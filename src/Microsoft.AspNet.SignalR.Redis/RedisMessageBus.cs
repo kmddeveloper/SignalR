@@ -50,48 +50,31 @@ namespace Microsoft.AspNet.SignalR.Redis
             });
         }
 
-        protected override Task Send(IList<Message> messages)
+        protected override int StreamCount
         {
-            return _connectTask.Then(msgs =>
+            get
             {
-                var taskCompletionSource = new TaskCompletionSource<object>();
-
-                // Group messages by source (connection id)
-                var messagesBySource = msgs.GroupBy(m => m.Source);
-
-                SendImpl(messagesBySource.GetEnumerator(), taskCompletionSource);
-
-                return taskCompletionSource.Task;
-            },
-            messages);
+                return _keys.Length;
+            }
         }
 
-        private void SendImpl(IEnumerator<IGrouping<string, Message>> enumerator, TaskCompletionSource<object> taskCompletionSource)
+        protected override Task Send(IList<Message> messages)
         {
-            if (!enumerator.MoveNext())
-            {
-                taskCompletionSource.TrySetResult(null);
-            }
-            else
-            {
-                IGrouping<string, Message> group = enumerator.Current;
+            return _connectTask.Then(msgs => base.Send(msgs), messages);
+        }
 
-                // Get the channel index we're going to use for this message
-                int index = Math.Abs(group.Key.GetHashCode()) % _keys.Length;
+        protected override Task Send(int streamIndex, IList<Message> messages)
+        {
+            string key = _keys[streamIndex];
 
-                string key = _keys[index];
+            // Increment the channel number
+            return _connection.Strings.Increment(_db, key)
+                               .Then((id, k) =>
+                               {
+                                   var message = new RedisMessage(id, messages.ToArray());
 
-                // Increment the channel number
-                _connection.Strings.Increment(_db, key)
-                                   .Then((id, k) =>
-                                   {
-                                       var message = new RedisMessage(id, group.ToArray());
-
-                                       return _connection.Publish(k, message.GetBytes());
-                                   }, key)
-                                   .Then((enumer, tcs) => SendImpl(enumer, tcs), enumerator, taskCompletionSource)
-                                   .ContinueWithNotComplete(taskCompletionSource);
-            }
+                                   return _connection.Publish(k, message.GetBytes());
+                               }, key);
         }
 
         private void OnConnectionClosed(object sender, EventArgs e)
@@ -125,7 +108,7 @@ namespace Microsoft.AspNet.SignalR.Redis
                 if (_connection != null)
                 {
                     _connection.Close(abort: true);
-                }                
+                }
             }
 
             base.Dispose(disposing);

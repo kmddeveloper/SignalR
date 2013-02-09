@@ -4,7 +4,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNet.SignalR.Infrastructure;
 
 namespace Microsoft.AspNet.SignalR.Messaging
 {
@@ -14,10 +16,19 @@ namespace Microsoft.AspNet.SignalR.Messaging
     public abstract class ScaleoutMessageBus : MessageBus
     {
         private readonly ConcurrentDictionary<string, IndexedDictionary<ulong, ScaleoutMapping>> _streams = new ConcurrentDictionary<string, IndexedDictionary<ulong, ScaleoutMapping>>();
+        private readonly SipHashBasedStringEqualityComparer _sipHashBasedComparer = new SipHashBasedStringEqualityComparer(0, 0);
 
         protected ScaleoutMessageBus(IDependencyResolver resolver)
             : base(resolver)
         {
+        }
+
+        protected virtual int StreamCount
+        {
+            get
+            {
+                return 1;
+            }
         }
 
         /// <summary>
@@ -25,7 +36,41 @@ namespace Microsoft.AspNet.SignalR.Messaging
         /// </summary>
         /// <param name="messages"></param>
         /// <returns></returns>
-        protected abstract Task Send(IList<Message> messages);
+        protected virtual Task Send(IList<Message> messages)
+        {
+            var taskCompletionSource = new TaskCompletionSource<object>();
+
+            // Group messages by source (connection id)
+            var messagesBySource = messages.GroupBy(m => m.Source);
+
+            SendImpl(messagesBySource.GetEnumerator(), taskCompletionSource);
+
+            return taskCompletionSource.Task;
+        }
+
+        protected virtual Task Send(int streamIndex, IList<Message> messages)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void SendImpl(IEnumerator<IGrouping<string, Message>> enumerator, TaskCompletionSource<object> taskCompletionSource)
+        {
+            if (!enumerator.MoveNext())
+            {
+                taskCompletionSource.TrySetResult(null);
+            }
+            else
+            {
+                IGrouping<string, Message> group = enumerator.Current;
+
+                // Get the channel index we're going to use for this message
+                int index = _sipHashBasedComparer.GetHashCode(group.Key) % StreamCount;
+
+                // Increment the channel number
+                Send(index, group.ToArray()).Then((enumer, tcs) => SendImpl(enumer, tcs), enumerator, taskCompletionSource)
+                                            .ContinueWithNotComplete(taskCompletionSource);
+            }
+        }
 
         /// <summary>
         /// Invoked when a payload is received from the backplane. There should only be one active call at any time.

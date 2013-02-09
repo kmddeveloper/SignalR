@@ -11,10 +11,10 @@ namespace Microsoft.AspNet.SignalR.Redis
     [Serializable]
     public class RedisMessage
     {
-        public RedisMessage(long id, Message[] message)
+        public RedisMessage(long id, Message[] messages)
         {
             Id = id;
-            Messages = message;
+            Messages = messages;
         }
 
         public long Id { get; set; }

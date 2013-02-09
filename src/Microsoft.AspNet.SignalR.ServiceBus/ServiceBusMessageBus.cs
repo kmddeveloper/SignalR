@@ -8,7 +8,7 @@ using Microsoft.ServiceBus.Messaging;
 
 namespace Microsoft.AspNet.SignalR.ServiceBus
 {
-    public class ServiceBusMessageBus2 : ScaleoutMessageBus
+    public class ServiceBusMessageBus : ScaleoutMessageBus
     {
         private const string SignalRTopicPrefix = "SIGNALR_TOPIC";
 
@@ -16,7 +16,7 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
         private ServiceBusConnection _connection;
         private readonly string[] _topics;
 
-        public ServiceBusMessageBus2(string connectionString, string topicPrefix, int numberOfTopics, IDependencyResolver resolver)
+        public ServiceBusMessageBus(string connectionString, string topicPrefix, int numberOfTopics, IDependencyResolver resolver)
             : base(resolver)
         {
             _connection = new ServiceBusConnection(connectionString);
@@ -28,40 +28,21 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             _subscription = _connection.Subscribe(_topics, OnMessage);
         }
 
-        protected override Task Send(IList<Message> messages)
+        protected override int StreamCount
         {
-            var taskCompletionSource = new TaskCompletionSource<object>();
-
-            // Group messages by source (connection id)
-            var messagesBySource = messages.GroupBy(m => m.Source);
-
-            SendImpl(messagesBySource.GetEnumerator(), taskCompletionSource);
-
-            return taskCompletionSource.Task;
+            get
+            {
+                return _topics.Length;
+            }
         }
 
-        private void SendImpl(IEnumerator<IGrouping<string, Message>> enumerator, TaskCompletionSource<object> taskCompletionSource)
+        protected override Task Send(int streamIndex, IList<Message> messages)
         {
-            if (!enumerator.MoveNext())
-            {
-                taskCompletionSource.TrySetResult(null);
-            }
-            else
-            {
-                IGrouping<string, Message> group = enumerator.Current;
+            string topic = _topics[streamIndex];
 
-                // Get the channel index we're going to use for this message
-                int index = Md5Hash.Compute32bitHashCode(group.Key) % _topics.Length;
+            Stream stream = FastMessageSerializer.GetStream(messages);
 
-                string topic = _topics[index];
-
-                Stream stream = FastMessageSerializer.GetStream(group);
-
-                // Increment the channel number
-                _connection.Publish(topic, stream)
-                                   .Then((enumer, tcs) => SendImpl(enumer, tcs), enumerator, taskCompletionSource)
-                                   .ContinueWithNotComplete(taskCompletionSource);
-            }
+            return _connection.Publish(topic, stream);
         }
 
         private void OnMessage(string topicName, IEnumerable<BrokeredMessage> messages)
