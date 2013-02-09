@@ -109,34 +109,12 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             {
                 result = receiver.BeginReceiveBatch(ReceiveBatchSize, ar =>
                 {
-                    bool backOff = false;
-
-                    try
+                    if (ar.CompletedSynchronously)
                     {
-                        if (ar.CompletedSynchronously)
-                        {
-                            return;
-                        }
-
-                        handler(topicPath, receiver.EndReceiveBatch(ar));
-                    }
-                    catch (ServerBusyException)
-                    {
-                        // Too busy so back off   
-                        backOff = true;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // Closed
                         return;
                     }
 
-                    if (backOff)
-                    {
-                        TaskAsyncHelper.Delay(BackoffAmount)
-                                       .Then(() => PumpMessages(topicPath, receiver, handler));
-                    }
-                    else
+                    if (ContinueReceiving(ar, topicPath, receiver, handler))
                     {
                         PumpMessages(topicPath, receiver, handler);
                     }
@@ -145,15 +123,47 @@ namespace Microsoft.AspNet.SignalR.ServiceBus
             }
             catch (OperationCanceledException)
             {
-                // Closed
+                // This means the channel is closed
                 return;
             }
 
             if (result.CompletedSynchronously)
             {
-                handler(topicPath, receiver.EndReceiveBatch(result));
-                goto receive;
+                if(ContinueReceiving(result, topicPath, receiver, handler))
+                {
+                    goto receive;
+                }
             }
+        }
+
+        private bool ContinueReceiving(IAsyncResult asyncResult, string topicPath, MessageReceiver receiver, Action<string, IEnumerable<BrokeredMessage>> handler)
+        {
+            bool backOff = false;
+
+            try
+            {
+                handler(topicPath, receiver.EndReceiveBatch(asyncResult));
+            }
+            catch (ServerBusyException)
+            {
+                // Too busy so back off
+                backOff = true;
+            }
+            catch (OperationCanceledException)
+            {
+                // This means the channel is closed
+                return false;
+            }
+
+            if (backOff)
+            {
+                TaskAsyncHelper.Delay(BackoffAmount)
+                               .Then(() => PumpMessages(topicPath, receiver, handler));
+            }
+
+            // true -> continue reading normally
+            // false -> Don't continue reading as we're backing off
+            return !backOff;
         }
 
         private class Subscription
